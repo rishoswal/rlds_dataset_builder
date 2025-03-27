@@ -104,57 +104,59 @@ class RealBimanual(tfds.core.GeneratorBasedBuilder):
     #         'val': self._generate_examples(path='data/val/episode_*.npy'),
     #     }
 
-    # def _generate_examples(self, path) -> Iterator[Tuple[str, Any]]:
-    #     """Generator of examples for each split."""
+    def _generate_examples(self, path) -> Iterator[Tuple[str, Any]]:
+        """Generator of examples for each split."""
 
-    #     def _parse_example(episode_path):
-    #         # load raw data --> this should change for your dataset
-    #         data = np.load(episode_path, allow_pickle=True)     # this is a list of dicts in our case
+        def _parse_example(episode_path):
+            # load raw data --> this should change for your dataset
+            data = np.load(episode_path, allow_pickle=True)     # this is a list of dicts in our case
 
-    #         # assemble episode --> here we're assuming demos so we set reward to 1 at the end
-    #         episode = []
-    #         for i, step in enumerate(data):
-    #             # compute Kona language embedding
-    #             language_embedding = self._embed([step['language_instruction']])[0].numpy()
+            # assemble episode --> here we're assuming demos so we set reward to 1 at the end
+            episode = []
+            for i in range(len(data["timestamp"])):
+                # compute Kona language embedding
+                language_embedding = self._embed([step['language_instruction']])[0].numpy()
 
-    #             episode.append({
-    #                 'observation': {
-    #                     'image': step['image'],
-    #                     'wrist_image': step['wrist_image'],
-    #                     'state': step['state'],
-    #                 },
-    #                 'action': step['action'],
-    #                 'discount': 1.0,
-    #                 'reward': float(i == (len(data) - 1)),
-    #                 'is_first': i == 0,
-    #                 'is_last': i == (len(data) - 1),
-    #                 'is_terminal': i == (len(data) - 1),
-    #                 'language_instruction': step['language_instruction'],
-    #                 'language_embedding': language_embedding,
-    #             })
+                episode.append({
+                    'observation': {
+                        'image': data['camera_image_3'][i],
+                        'left_wrist_image': data['camera_image_0'][i], # TODO: update for real data
+                        'right_wrist_image': data['camera_image_1'][i], # TODO: update for real data
+                        'left_gripper_position': data['left_gripper_position'][i],
+                        'right_gripper_position': data['right_gripper_position'][i],
+                        'state': np.concatenate([data['left_joint_positions'][i], data['right_joint_positions'][i]]),
+                    },
+                    'action': np.concatenate([data['left_delta_action'][i], data['right_delta_action'][i]]),
+                    'discount': 1.0,
+                    'reward': float(i == (len(data) - 1)),
+                    'is_first': i == 0,
+                    'is_last': i == (len(data) - 1),
+                    'is_terminal': i == (len(data) - 1),
+                    'language_instruction': step['language_instruction'],
+                })
 
-    #         # create output data sample
-    #         sample = {
-    #             'steps': episode,
-    #             'episode_metadata': {
-    #                 'file_path': episode_path
-    #             }
-    #         }
+            # create output data sample
+            sample = {
+                'steps': episode,
+                'episode_metadata': {
+                    'file_path': episode_path
+                }
+            }
 
-    #         # if you want to skip an example for whatever reason, simply return None
-    #         return episode_path, sample
+            # if you want to skip an example for whatever reason, simply return None
+            return episode_path, sample
 
-    #     # create list of all examples
-    #     episode_paths = glob.glob(path)
+        # create list of all examples
+        episode_paths = glob.glob(path)
 
-    #     # for smallish datasets, use single-thread parsing
-    #     for sample in episode_paths:
-    #         yield _parse_example(sample)
+        # for smallish datasets, use single-thread parsing
+        for sample in episode_paths:
+            yield _parse_example(sample)
 
-    #     # for large datasets use beam to parallelize data parsing (this will have initialization overhead)
-    #     # beam = tfds.core.lazy_imports.apache_beam
-    #     # return (
-    #     #         beam.Create(episode_paths)
-    #     #         | beam.Map(_parse_example)
-    #     # )
+        # for large datasets use beam to parallelize data parsing (this will have initialization overhead)
+        # beam = tfds.core.lazy_imports.apache_beam
+        # return (
+        #         beam.Create(episode_paths)
+        #         | beam.Map(_parse_example)
+        # )
 
