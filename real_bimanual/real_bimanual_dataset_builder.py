@@ -30,19 +30,19 @@ class RealBimanual(tfds.core.GeneratorBasedBuilder):
                             doc='Timestamp of the observation.'
                         ),
                         'image': tfds.features.Image(
-                            shape=(1280, 720, 3),
+                            shape=(480, 640, 3),
                             dtype=np.uint8,
                             encoding_format='jpeg',
                             doc='Main camera RGB observation.',
                         ),
                         'left_wrist_image': tfds.features.Image(
-                            shape=(640, 480, 3),
+                            shape=(480, 640, 3),
                             dtype=np.uint8,
                             encoding_format='jpeg',
                             doc='Left wrist camera RGB observation.',
                         ),
                         'right_wrist_image': tfds.features.Image(
-                            shape=(640, 480, 3),
+                            shape=(480, 640, 3),
                             dtype=np.uint8,
                             encoding_format='jpeg',
                             doc='Right wrist camera RGB observation.',
@@ -57,13 +57,13 @@ class RealBimanual(tfds.core.GeneratorBasedBuilder):
                         ),
                         'state': tfds.features.Tensor(
                             shape=(14,),
-                            dtype=np.float32,
+                            dtype=np.float64,
                             doc='Robot joint state (7D left arm + 7D right arm).',
                         ),
                     }),
                     'action': tfds.features.Tensor(
                         shape=(14,),
-                        dtype=np.float32,
+                        dtype=np.float64,
                         doc='Robot arm action, (7D left arm + 7D right arm)',
                     ),
                     'discount': tfds.features.Scalar(
@@ -89,6 +89,12 @@ class RealBimanual(tfds.core.GeneratorBasedBuilder):
                     'language_instruction': tfds.features.Text(
                         doc='Language Instruction.'
                     ),
+                    'language_embedding': tfds.features.Tensor(
+                        shape=(512,),
+                        dtype=np.float32,
+                        doc='Kona language embedding. '
+                            'See https://tfhub.dev/google/universal-sentence-encoder-large/5'
+                    ),
                 }),
                 'episode_metadata': tfds.features.FeaturesDict({
                     'file_path': tfds.features.Text(
@@ -97,12 +103,12 @@ class RealBimanual(tfds.core.GeneratorBasedBuilder):
                 }),
             }))
 
-    # def _split_generators(self, dl_manager: tfds.download.DownloadManager):
-    #     """Define data splits."""
-    #     return {
-    #         'train': self._generate_examples(path='data/train/episode_*.npy'),
-    #         'val': self._generate_examples(path='data/val/episode_*.npy'),
-    #     }
+    def _split_generators(self, dl_manager: tfds.download.DownloadManager):
+        """Define data splits."""
+        return {
+            'train': self._generate_examples(path='/home/prior/rishoswal/bimanual_oculus/orange_apple_in_bowl/*'),
+            # 'val': self._generate_examples(path='data/val/episode_*.npy'),
+        }
 
     def _generate_examples(self, path) -> Iterator[Tuple[str, Any]]:
         """Generator of examples for each split."""
@@ -110,18 +116,20 @@ class RealBimanual(tfds.core.GeneratorBasedBuilder):
         def _parse_example(episode_path):
             # load raw data --> this should change for your dataset
             data = np.load(episode_path, allow_pickle=True)     # this is a list of dicts in our case
+            print(list(data.keys()))
 
             # assemble episode --> here we're assuming demos so we set reward to 1 at the end
             episode = []
             for i in range(len(data["timestamp"])):
                 # compute Kona language embedding
-                language_embedding = self._embed([step['language_instruction']])[0].numpy()
+                language_embedding = self._embed([data['language_instruction'][0]])[0].numpy()
 
                 episode.append({
                     'observation': {
+                        'timestamp': data['timestamp'][i],
                         'image': data['camera_image_3'][i],
-                        'left_wrist_image': data['camera_image_0'][i], # TODO: update for real data
-                        'right_wrist_image': data['camera_image_1'][i], # TODO: update for real data
+                        'left_wrist_image': data['camera_image_1'][i],
+                        'right_wrist_image': data['camera_image_2'][i],
                         'left_gripper_position': data['left_gripper_position'][i],
                         'right_gripper_position': data['right_gripper_position'][i],
                         'state': np.concatenate([data['left_joint_positions'][i], data['right_joint_positions'][i]]),
@@ -132,7 +140,8 @@ class RealBimanual(tfds.core.GeneratorBasedBuilder):
                     'is_first': i == 0,
                     'is_last': i == (len(data) - 1),
                     'is_terminal': i == (len(data) - 1),
-                    'language_instruction': step['language_instruction'],
+                    'language_instruction': data['language_instruction'][0],
+                    'language_embedding': language_embedding
                 })
 
             # create output data sample
@@ -148,6 +157,7 @@ class RealBimanual(tfds.core.GeneratorBasedBuilder):
 
         # create list of all examples
         episode_paths = glob.glob(path)
+        # episode_paths = ["/home/prior/rishoswal/bimanual_oculus/demos/20250327T161224_0_273.npz"]
 
         # for smallish datasets, use single-thread parsing
         for sample in episode_paths:
